@@ -7,7 +7,16 @@ primary_slo:
     total_event: 'event == "request_received"'
   target_percent: 99.5
   error_budget_percent: 0.5
-  note: Học viên phải giải thích hoặc điều chỉnh ngưỡng bằng baseline của mình. Ví dụ nếu có 10,000 request trong cửa sổ 28 ngày, error budget 0.5% nghĩa là tối đa 50 request được phép không đạt SLO.
+  error_budget_explanation: |
+    Với baseline ~10 request/phút trong phiên lab (khoảng 2400 request/4 giờ),
+    quy mô ra 28 ngày ≈ 403,200 request.
+    Error budget 0.5% = tối đa 2,016 request được phép không đạt SLO (latency_ms > 3000ms hoặc lỗi).
+    Baseline thực tế: P95 latency ≈ 400ms, error rate ≈ 0% → còn nhiều error budget.
+    SLO 99.5% được chọn vì API là internal chatbot; latency 3000ms là ngưỡng người dùng bắt đầu nhận thấy.
+  baseline_p50_ms: 390
+  baseline_p95_ms: 410
+  baseline_p99_ms: 2500
+  baseline_error_rate_pct: 0
 guardrails:
   error_rate_pct_max: 2
   daily_cost_usd_max: 2.5

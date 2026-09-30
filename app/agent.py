@@ -51,7 +51,10 @@ class LabAgent:
             },
         ):
             started = time.perf_counter()
-            docs = retrieve(message)
+
+            # CP2: retrieval child span
+            docs = self._retrieve(message)
+
             prompt = resolve_prompt(
                 langfuse_client,
                 feature=feature,
@@ -71,10 +74,11 @@ class LabAgent:
                 },
                 version=prompt.version,
             )
-            # TODO (CP2): instrument retrieve() and FakeLLM.generate() as child
-            # observations. The nested generation must receive prompt, usage and cost.
+
+            # CP2: generation child span with prompt, usage and cost
             with propagate_attributes(prompt=prompt.managed_prompt):
-                response = self.llm.generate(prompt.text)
+                response = self._generate(prompt.text, prompt)
+
             quality_score = self._heuristic_quality(message, response.text, docs)
             latency_ms = int((time.perf_counter() - started) * 1000)
             cost_usd = self._estimate_cost(response.usage.input_tokens, response.usage.output_tokens)
@@ -97,6 +101,30 @@ class LabAgent:
             cost_usd=cost_usd,
             quality_score=quality_score,
         )
+
+    @observe(name="retrieval", as_type="span", capture_input=False, capture_output=False)
+    def _retrieve(self, message: str) -> list[str]:
+        """Child span: retrieval step - fetch relevant documents."""
+        return retrieve(message)
+
+    @observe(name="generation", as_type="generation", capture_input=False, capture_output=False)
+    def _generate(self, prompt_text: str, prompt) -> object:
+        """Child generation span: call LLM and update usage/cost metadata."""
+        langfuse_client = get_langfuse_client()
+        response = self.llm.generate(prompt_text)
+        cost_usd = self._estimate_cost(response.usage.input_tokens, response.usage.output_tokens)
+        # Use getattr to handle mock clients in tests that lack update_current_generation
+        update_fn = getattr(langfuse_client, "update_current_generation", None)
+        if update_fn is not None:
+            update_fn(
+                model=self.model,
+                usage_details={
+                    "input": response.usage.input_tokens,
+                    "output": response.usage.output_tokens,
+                },
+                cost_details={"total": cost_usd},
+            )
+        return response
 
     def _estimate_cost(self, tokens_in: int, tokens_out: int) -> float:
         input_cost = (tokens_in / 1_000_000) * 3
