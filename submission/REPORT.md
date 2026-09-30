@@ -40,9 +40,9 @@
 |---|---|---|---|
 | `validate_logs.py` | 30/100 | ≥ 80/100 | CP1 fix correlation ID, metadata enrichment và PII scrubber |
 | `validate_dashboard.py` | 6/6 | 6/6 | Dashboard YAML hợp lệ ngay từ đầu |
-| `pytest` | 22 passed | 26 passed | Thêm 4 test PII (CCCD + credit card) |
+| `pytest` | 22 passed | 25 passed | Bổ sung test PII cho CCCD và credit card |
 | Số traces hợp lệ | 0 | ≥ 10 | lab-agent-run → retrieval + generation, đủ cây |
-| Số PII leak | 0 | 0 | PII scrubber hoạt động từ CP0 |
+| Số PII leak | Chưa kiểm tra bằng payload PII | 0 | Bật PII scrubber ở CP1 và xác minh bằng validator/evidence 05 |
 | Latency P95 / TTFT P95 | ~155ms / 50ms | 2657ms / 50ms | P95 tăng ~17× khi inject rag_slow incident |
 | Retrieval success rate | 100% | 100% | Không có tool_fail incident trong challenge |
 
@@ -61,7 +61,7 @@
 - **Prompt name:** `day13-chat`
 - **Version/label baseline:** v1 — labels: `baseline`, `production`
 - **Version/label candidate:** v2 — labels: `candidate`
-- **Trace ID của mỗi version:** Xem ảnh `10a-promote.png` (production → v2) và `10b-rollback.png` (production → v1). Trace ID cụ thể có trong metadata Langfuse, trường `correlation_id` khớp với log tương ứng.
+- **Trace ID quan sát được trong evidence:** `36d88c4477be392fbf55c76fa817f978` (ảnh 08a, prompt v1) và `0fb214f2b1a868c6f1c0fe0cc9f339b2` (ảnh 07/08b, prompt v1). Ảnh `10a-promote.png` và `10b-rollback.png` lần lượt chứng minh thao tác promote `production` sang v2 và rollback về v1; bộ ảnh giữ nguyên không hiển thị trace ID riêng của v2.
 - **Cách promote và rollback `production`:** Promote: vào Langfuse → Prompts → day13-chat → v2 → Edit labels → thêm `production`. Rollback: làm tương tự với v1. Sau mỗi lần đổi label, restart API và gửi 1 request để confirm.
 
 ## 6. Dashboard, SLO và alerts
@@ -75,7 +75,7 @@
 
 - **Challenge ID:** day13-k4-l3b-monitoring-llmops-v1
 - **Khoảng thời gian điều tra:** 2026-09-30 12:24–12:25 (ICT / UTC+7) — tương đương 05:24–05:25 UTC
-- **Triệu chứng từ metrics:** Dashboard (ảnh `12-incident-metric.png`) cho thấy Latency P95 và P99 đột ngột tăng từ ~155ms (baseline) lên **2657ms** (~17× SLO threshold 3000ms), trong khi error rate vẫn 0% và retrieval success 100% — đây là triệu chứng latency spike thuần túy, không kèm lỗi.
+- **Triệu chứng từ metrics:** Dashboard (ảnh `12-incident-metric.png`) cho thấy Latency P95 và P99 đột ngột tăng từ ~155ms (baseline) lên **2657ms**, tức khoảng **17× baseline** nhưng vẫn thấp hơn ngưỡng SLO 3000ms. Error rate vẫn 0% và retrieval success 100%, nên đây là triệu chứng latency spike thuần túy, không kèm lỗi.
 - **Log line và correlation ID liên quan:** `correlation_id: req-68aef9c5` — log (ảnh `13-incident-log.png`) ghi `latency_ms: 2657`, `session_id: k4-l3b-challenge-s04`, `ts: 2026-09-30T05:24:58.065924Z`. Tổng 4 request challenge đều bị ảnh hưởng (req-52ad93ad, req-68aef9c5, req-81ed7305, req-f4f02b8a), latency ~2654–2657ms.
 - **Trace ID và span gây ảnh hưởng:** Trace `c1eb1d9d6da74a9204e36390ea09d80f` (ảnh `14-incident-trace.png`). Span **`retrieval` chiếm 2.50s / 2.66s tổng** — chiếm 94% thời gian. Span `generation` chỉ 0.16s. Rõ ràng bottleneck nằm ở bước retrieval.
 - **Root cause:** Script `inject_incident.py --scenario rag_slow` thêm delay nhân tạo vào bước vector search/retrieval của `_retrieve()`. Kết quả: mọi request phải chờ retrieval ~2.5s thay vì <200ms baseline. Đây là *slow retrieval* chứ không phải lỗi LLM hay lỗi API — giải thích tại sao HTTP status vẫn 200 và error rate = 0%.
